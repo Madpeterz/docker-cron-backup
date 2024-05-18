@@ -1,38 +1,20 @@
 #!/bin/bash
-[ -z "${MYSQL_USER}" ] && { echo "=> MYSQL_USER cannot be empty" && exit 1; }
-[ -z "${MYSQL_PASS:=$MYSQL_PASSWORD}" ] && { echo "=> MYSQL_PASS cannot be empty" && exit 1; }
-[ -z "${GZIP_LEVEL}" ] && { GZIP_LEVEL=6; }
-
 DATE=$(date +%Y%m%d%H%M)
 echo "=> Backup started at $(date "+%Y-%m-%d %H:%M:%S")"
-DATABASES=${MYSQL_DATABASE:-${MYSQL_DB:-$(mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -p"$MYSQL_PASS" -e "SHOW DATABASES;" | tr -d "| " | grep -v Database)}}
-DB_COUNTER=0
-for db in ${DATABASES}
-do
-  if [[ "$db" != "information_schema" ]] && [[ "$db" != "performance_schema" ]] && [[ "$db" != "mysql" ]] && [[ "$db" != _* ]]
-  then
-    echo "==> Dumping database: $db"
-    FILENAME=/backup/$DATE.$db.sql
-    LATEST=/backup/latest.$db.sql.gz
-    if mysqldump --single-transaction -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -p"$MYSQL_PASS" "$db" $MYSQLDUMP_OPTS > "$FILENAME"
-    then
-      gzip "-$GZIP_LEVEL" -f "$FILENAME"
-      echo "==> Creating symlink to latest backup: $(basename "$FILENAME".gz)"
-      rm "$LATEST" 2> /dev/null
-      cd /backup || exit && ln -s "$(basename "$FILENAME".gz)" "$(basename "$LATEST")"
-      DB_COUNTER=$(( DB_COUNTER + 1 ))
-    else
-      rm -rf "$FILENAME"
-    fi
-  fi
-done
+FILENAME=/backup/archive.$DATE.tar.gz
+LATEST=/backup/latest.tar.gz
+tar -z "${GZIP_LEVEL}" cvf "$FILENAME" backuptarget/ 
+echo "=> Backup finished at $(date "+%Y-%m-%d %H:%M:%S")"
+echo "==> Creating symlink to latest backup: $(basename "$FILENAME".gz)"
+rm "$LATEST" 2> /dev/null
+cd /backup || exit && ln -s "$(basename "$FILENAME".tar.gz)" "$(basename "$LATEST")"
 
 if [ -n "$MAX_BACKUPS" ]
 then
-  MAX_FILES=$(( MAX_BACKUPS * DB_COUNTER ))
-  while [ "$(find /backup -maxdepth 1 -name "*.sql.gz" -type f | wc -l)" -gt "$MAX_FILES" ]
+  MAX_FILES=$(( MAX_BACKUPS ))
+  while [ "$(find /backup -maxdepth 1 -name "*.tar.gz" -type f | wc -l)" -gt "$MAX_FILES" ]
   do
-    TARGET=$(find /backup -maxdepth 1 -name "*.sql.gz" -type f | sort | head -n 1)
+    TARGET=$(find /backup -maxdepth 1 -name "*.tar.gz" -type f | sort | head -n 1)
     echo "==> Max number of backups ($MAX_BACKUPS) reached. Deleting ${TARGET} ..."
     rm -rf "${TARGET}"
     echo "==> Backup ${TARGET} deleted"
